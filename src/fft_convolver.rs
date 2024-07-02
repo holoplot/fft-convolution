@@ -119,6 +119,20 @@ pub struct FFTConvolver {
     input_buffer_fill: usize,
 }
 
+impl FFTConvolver {
+    fn update_segment(&mut self, response: &[Sample], index: usize) {
+        let segment = &mut self.segments_ir[index];
+        let remaining = response.len() - index * self.block_size;
+        let copy_size = std::cmp::min(self.block_size, remaining);
+        copy_and_pad(
+            &mut self.fft_buffer,
+            &response[index * self.block_size..],
+            copy_size,
+        );
+        self.fft.forward(&mut self.fft_buffer, segment).unwrap();
+    }
+}
+
 impl Convolution for FFTConvolver {
     fn init(impulse_response: &[Sample], block_size: usize, max_response_length: usize) -> Self {
         if max_response_length < impulse_response.len() {
@@ -211,19 +225,7 @@ impl Convolution for FFTConvolver {
 
         // Prepare IR
         for i in 0..self.active_seg_count {
-            let segment = &mut self.segments_ir[i];
-            let remaining = new_ir_len - (i * self.block_size);
-            let size_copy = if remaining >= self.block_size {
-                self.block_size
-            } else {
-                remaining
-            };
-            copy_and_pad(
-                &mut self.fft_buffer,
-                &response[i * self.block_size..],
-                size_copy,
-            );
-            self.fft.forward(&mut self.fft_buffer, segment).unwrap();
+            self.update_segment(response, i);
         }
 
         // Clear remaining segments
