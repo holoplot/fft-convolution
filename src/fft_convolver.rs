@@ -120,7 +120,11 @@ pub struct FFTConvolver {
 }
 
 impl FFTConvolver {
-    fn update_segment(&mut self, response: &[Sample], index: usize) {
+    pub fn active_seg_count(&self) -> &usize {
+        &self.active_seg_count
+    }
+
+    pub fn update_segment(&mut self, response: &[Sample], index: usize) {
         let segment = &mut self.segments_ir[index];
         let remaining = response.len() - index * self.block_size;
         let copy_size = std::cmp::min(self.block_size, remaining);

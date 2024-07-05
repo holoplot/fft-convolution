@@ -2,6 +2,7 @@
 mod tests {
     use crate::crossfade_convolver::CrossfadeConvolver;
     use crate::fft_convolver::FFTConvolver;
+    use crate::stepwise_update_convolver::StepwiseUpdateConvolver;
     use crate::{Convolution, Sample};
 
     fn generate_sinusoid(
@@ -116,6 +117,72 @@ mod tests {
                     check_equal(&output_b, &output_crossfade_convolver);
                 }
             }
+        }
+    }
+
+    #[test]
+    fn stepwise_update_is_like_zero_crossfade() {
+        let block_size = 256;
+        let num_segments = 32;
+        let response_a = generate_sinusoid(num_segments * block_size, 500.0, 48000.0, 0.5);
+        let response_b = generate_sinusoid(num_segments * block_size, 400.0, 48000.0, 0.9);
+        let mut convolver_a = FFTConvolver::init(&response_a, block_size);
+        let mut convolver_b = FFTConvolver::init(&response_b, block_size);
+        let mut stepwise_update_convolver = StepwiseUpdateConvolver::init(&response_a, block_size);
+        let mut input_gain_a = 1.0;
+        let mut input_gain_b = 0.0;
+
+        let num_input_blocks = num_segments * 4;
+        let input = generate_sinusoid(num_input_blocks * block_size, 200.0, 48000.0, 0.3);
+
+        let mut output_a = vec![0.0; num_input_blocks * block_size];
+        let mut output_b = vec![0.0; num_input_blocks * block_size];
+        let mut output_stepwise_update_convolver = vec![0.0; num_input_blocks * block_size];
+
+        let update_index = num_segments * 2;
+
+        for i in 0..num_input_blocks {
+            if i == update_index {
+                input_gain_a = 0.0;
+                input_gain_b = 1.0;
+                stepwise_update_convolver.update(&response_b);
+            }
+
+            convolver_a.process(
+                &input
+                    .iter()
+                    .map(|&x| x * input_gain_a)
+                    .collect::<Vec<Sample>>()[i * block_size..(i + 1) * block_size],
+                &mut output_a[i * block_size..(i + 1) * block_size],
+            );
+
+            convolver_b.process(
+                &input
+                    .iter()
+                    .map(|&x| x * input_gain_b)
+                    .collect::<Vec<Sample>>()[i * block_size..(i + 1) * block_size],
+                &mut output_b[i * block_size..(i + 1) * block_size],
+            );
+
+            stepwise_update_convolver.process(
+                &input[i * block_size..(i + 1) * block_size],
+                &mut output_stepwise_update_convolver[i * block_size..(i + 1) * block_size],
+            );
+
+            let check_equal = |lhs: &[Sample], rhs: &[Sample]| {
+                for j in 0..block_size {
+                    assert!((lhs[j] - rhs[j]).abs() < 1e-6);
+                }
+            };
+
+            check_equal(
+                &output_a
+                    .iter()
+                    .zip(output_b.iter())
+                    .map(|(a, b)| a + b)
+                    .collect::<Vec<Sample>>(),
+                &output_stepwise_update_convolver,
+            );
         }
     }
 }
