@@ -28,11 +28,7 @@ impl<T: Convolution> CrossfadeConvolver<T> {
             core: CrossfadeConvolverCore {
                 convolver_a: convolver.clone(),
                 convolver_b: convolver,
-                crossfader: Crossfader::new(
-                    RaisedCosineMixer,
-                    crossfade_samples,
-                    max_response_length,
-                ),
+                crossfader: Crossfader::new(RaisedCosineMixer, crossfade_samples, max_buffer_size),
             },
             buffer_a: vec![0.0; max_buffer_size],
             buffer_b: vec![0.0; max_buffer_size],
