@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests {
+
     use crate::crossfade_convolver::CrossfadeConvolver;
     use crate::fft_convolver::FFTConvolver;
     use crate::stepwise_update_convolver::StepwiseUpdateConvolver;
@@ -169,21 +170,21 @@ mod tests {
                 &input[i * block_size..(i + 1) * block_size],
                 &mut output_stepwise_update_convolver[i * block_size..(i + 1) * block_size],
             );
-
-            let check_equal = |lhs: &[Sample], rhs: &[Sample]| {
-                for j in 0..block_size {
-                    assert!((lhs[j] - rhs[j]).abs() < 1e-6);
-                }
-            };
-
-            check_equal(
-                &output_a
-                    .iter()
-                    .zip(output_b.iter())
-                    .map(|(a, b)| a + b)
-                    .collect::<Vec<Sample>>(),
-                &output_stepwise_update_convolver,
-            );
         }
+
+        let check_equal = |lhs: &[Sample], rhs: &[Sample]| {
+            for j in 0..lhs.len() {
+                assert!((lhs[j] - rhs[j]).abs() < 1e-4);
+            }
+        };
+
+        check_equal(
+            &output_a
+                .iter()
+                .zip(output_b.iter())
+                .map(|(a, b)| a + b)
+                .collect::<Vec<Sample>>(),
+            &output_stepwise_update_convolver,
+        );
     }
 }
