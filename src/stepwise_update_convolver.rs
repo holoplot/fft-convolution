@@ -19,7 +19,7 @@ impl StepwiseUpdateConvolver {
         Self {
             convolver: FFTConvolver::init(response, max_buffer_size),
             buffer: vec![0.0; max_buffer_size],
-            current_response: vec![0.0; max_response_length],
+            current_response: response.to_vec(),
             next_response: vec![0.0; max_response_length],
             queued_response: vec![0.0; max_response_length],
             segment_to_load: 0,
