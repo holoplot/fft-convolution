@@ -16,7 +16,12 @@ pub struct StepwiseUpdateConvolver {
 }
 
 impl StepwiseUpdateConvolver {
-    pub fn new(response: &[Sample], max_response_length: usize, max_buffer_size: usize) -> Self {
+    pub fn new(
+        response: &[Sample],
+        max_response_length: usize,
+        max_buffer_size: usize,
+        scale_factor: usize,
+    ) -> Self {
         Self {
             convolver: FFTConvolver::init(response, max_buffer_size, max_response_length),
             buffer: vec![0.0; max_buffer_size],
@@ -24,7 +29,7 @@ impl StepwiseUpdateConvolver {
             next_response: vec![0.0; max_response_length],
             queued_response: vec![0.0; max_response_length],
             segment_to_load: 0,
-            scale_factor: 1,
+            scale_factor,
             transition_counter: 0,
             switching: false,
             response_pending: false,
@@ -34,7 +39,7 @@ impl StepwiseUpdateConvolver {
 
 impl Convolution for StepwiseUpdateConvolver {
     fn init(response: &[Sample], max_block_size: usize, max_response_length: usize) -> Self {
-        Self::new(response, max_response_length, max_block_size)
+        Self::new(response, max_response_length, max_block_size, 1)
     }
 
     fn update(&mut self, response: &[Sample]) {
@@ -101,7 +106,7 @@ fn mix(response_a: &[Sample], response_b: &[Sample], weight: f32) -> Vec<Sample>
 fn test_crossfade_convolver_passthrough() {
     let mut response = [0.0; 1024];
     response[0] = 1.0;
-    let mut convolver = StepwiseUpdateConvolver::new(&response, 1024, 1024);
+    let mut convolver = StepwiseUpdateConvolver::new(&response, 1024, 1024, 1);
     let input = vec![1.0; 1024];
     let mut output = vec![0.0; 1024];
     convolver.process(&input, &mut output);
