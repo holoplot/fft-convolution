@@ -233,9 +233,6 @@ impl Convolution for FFTConvolver {
 
         self.input_buffer.fill(0.);
         self.input_buffer_fill = 0;
-
-        // Reset current position
-        self.current = 0;
     }
 
     fn process(&mut self, input: &[Sample], output: &mut [Sample]) {
