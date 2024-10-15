@@ -126,9 +126,10 @@ mod tests {
         let num_segments = 32;
         let response_a = generate_sinusoid(num_segments * block_size, 500.0, 48000.0, 0.5);
         let response_b = generate_sinusoid(num_segments * block_size, 400.0, 48000.0, 0.9);
-        let mut convolver_a = FFTConvolver::init(&response_a, block_size);
-        let mut convolver_b = FFTConvolver::init(&response_b, block_size);
-        let mut stepwise_update_convolver = StepwiseUpdateConvolver::init(&response_a, block_size);
+        let mut convolver_a = FFTConvolver::init(&response_a, block_size, response_a.len());
+        let mut convolver_b = FFTConvolver::init(&response_b, block_size, response_b.len());
+        let mut stepwise_update_convolver =
+            StepwiseUpdateConvolver::init(&response_a, block_size, response_a.len());
         let mut input_gain_a = 1.0;
         let mut input_gain_b = 0.0;
 
