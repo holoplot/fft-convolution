@@ -99,27 +99,31 @@ pub fn sum(result: &mut [f32], a: &[f32], b: &[f32]) {
         result[i] = a[i] + b[i];
     }
 }
+
 #[derive(Default, Clone)]
-pub struct FFTConvolver {
+pub struct FFTConvolverCore {
     ir_len: usize,
     block_size: usize,
-    _seg_size: usize,
     seg_count: usize,
     active_seg_count: usize,
-    _fft_complex_size: usize,
-    segments: Vec<Vec<Complex<f32>>>,
-    segments_ir: Vec<Vec<Complex<f32>>>,
-    fft_buffer: Vec<f32>,
+    segments: Vec<Vec<Complex<Sample>>>,
+    segments_ir: Vec<Vec<Complex<Sample>>>,
+    fft_buffer: Vec<Sample>,
     fft: Fft,
-    pre_multiplied: Vec<Complex<f32>>,
-    conv: Vec<Complex<f32>>,
-    overlap: Vec<f32>,
+    pre_multiplied: Vec<Complex<Sample>>,
+    conv: Vec<Complex<Sample>>,
     current: usize,
-    input_buffer: Vec<f32>,
-    input_buffer_fill: usize,
 }
 
-impl Convolution for FFTConvolver {
+impl FFTConvolverCore {
+    pub fn block_size(&self) -> usize {
+        self.block_size
+    }
+
+    pub fn active_seg_count(&self) -> usize {
+        self.active_seg_count
+    }
+
     fn init(impulse_response: &[Sample], block_size: usize, max_response_length: usize) -> Self {
         if max_response_length < impulse_response.len() {
             panic!(
@@ -162,32 +166,21 @@ impl Convolution for FFTConvolver {
         // prepare convolution buffers
         let pre_multiplied = vec![Complex::new(0., 0.); fft_complex_size];
         let conv = vec![Complex::new(0., 0.); fft_complex_size];
-        let overlap = vec![0.; block_size];
 
-        // prepare input buffer
-        let input_buffer = vec![0.; block_size];
-        let input_buffer_fill = 0;
-
-        // reset current position
         let current = 0;
 
         Self {
             ir_len,
             block_size,
-            _seg_size: seg_size,
             seg_count,
             active_seg_count,
-            _fft_complex_size: fft_complex_size,
             segments,
             segments_ir,
             fft_buffer,
             fft,
             pre_multiplied,
             conv,
-            overlap,
             current,
-            input_buffer,
-            input_buffer_fill,
         }
     }
 
@@ -205,7 +198,6 @@ impl Convolution for FFTConvolver {
         self.fft_buffer.fill(0.);
         self.conv.fill(Complex::new(0., 0.));
         self.pre_multiplied.fill(Complex::new(0., 0.));
-        self.overlap.fill(0.);
 
         self.active_seg_count = ((new_ir_len as f64 / self.block_size as f64).ceil()) as usize;
 
@@ -230,13 +222,107 @@ impl Convolution for FFTConvolver {
         for i in self.active_seg_count..self.seg_count {
             self.segments_ir[i].fill(Complex::new(0., 0.));
         }
+    }
+
+    fn update_current(&mut self) {
+        self.current = if self.current > 0 {
+            self.current - 1
+        } else {
+            self.active_seg_count - 1
+        };
+    }
+
+    fn process_block(&mut self, input: &[Sample], output: &mut [Sample], use_pre_multiplied: bool) {
+        // Forward FFT
+        copy_and_pad(&mut self.fft_buffer, &input, self.block_size);
+        if let Err(_err) = self
+            .fft
+            .forward(&mut self.fft_buffer, &mut self.segments[self.current])
+        {
+            output.fill(0.);
+            return; // error!
+        }
+
+        // complex multiplication
+        if !use_pre_multiplied {
+            self.pre_multiplied.fill(Complex { re: 0., im: 0. });
+            for i in 1..self.active_seg_count {
+                let index_ir = i;
+                let index_audio = (self.current + i) % self.active_seg_count;
+                complex_multiply_accumulate(
+                    &mut self.pre_multiplied,
+                    &self.segments_ir[index_ir],
+                    &self.segments[index_audio],
+                );
+            }
+        }
+        self.conv.clone_from_slice(&self.pre_multiplied);
+        complex_multiply_accumulate(
+            &mut self.conv,
+            &self.segments[self.current],
+            &self.segments_ir[0],
+        );
+
+        // Backward FFT
+        if let Err(_err) = self.fft.inverse(&mut self.conv, output) {
+            output.fill(0.);
+            return; // error!
+        }
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct FFTConvolver {
+    block_size: usize,
+    core: FFTConvolverCore,
+    conv: Vec<f32>,
+    overlap: Vec<f32>,
+    input_buffer: Vec<f32>,
+    input_buffer_fill: usize,
+}
+
+impl Convolution for FFTConvolver {
+    fn init(impulse_response: &[Sample], block_size: usize, max_response_length: usize) -> Self {
+        if max_response_length < impulse_response.len() {
+            panic!(
+                "max_response_length must be at least the length of the initial impulse response"
+            );
+        }
+
+        let core = FFTConvolverCore::init(impulse_response, block_size, max_response_length);
+
+        let block_size = core.block_size();
+
+        // prepare convolution buffers
+        let conv = vec![0.; 2 * block_size];
+        let overlap = vec![0.; block_size];
+
+        // prepare input buffer
+        let input_buffer = vec![0.; block_size];
+        let input_buffer_fill = 0;
+
+        Self {
+            block_size,
+            core,
+            conv,
+            overlap,
+            input_buffer,
+            input_buffer_fill,
+        }
+    }
+
+    fn update(&mut self, response: &[Sample]) {
+        self.core.update(response);
+
+        self.conv.fill(0.);
+        self.overlap.fill(0.);
 
         self.input_buffer.fill(0.);
         self.input_buffer_fill = 0;
     }
 
     fn process(&mut self, input: &[Sample], output: &mut [Sample]) {
-        if self.active_seg_count == 0 {
+        if self.core.active_seg_count() == 0 {
             output.fill(0.);
             return;
         }
@@ -253,46 +339,13 @@ impl Convolution for FFTConvolver {
             self.input_buffer[input_buffer_pos..input_buffer_pos + processing]
                 .clone_from_slice(&input[processed..processed + processing]);
 
-            // Forward FFT
-            copy_and_pad(&mut self.fft_buffer, &self.input_buffer, self.block_size);
-            if let Err(_err) = self
-                .fft
-                .forward(&mut self.fft_buffer, &mut self.segments[self.current])
-            {
-                output.fill(0.);
-                return; // error!
-            }
-
-            // complex multiplication
-            if input_buffer_was_empty {
-                self.pre_multiplied.fill(Complex { re: 0., im: 0. });
-                for i in 1..self.active_seg_count {
-                    let index_ir = i;
-                    let index_audio = (self.current + i) % self.active_seg_count;
-                    complex_multiply_accumulate(
-                        &mut self.pre_multiplied,
-                        &self.segments_ir[index_ir],
-                        &self.segments[index_audio],
-                    );
-                }
-            }
-            self.conv.clone_from_slice(&self.pre_multiplied);
-            complex_multiply_accumulate(
-                &mut self.conv,
-                &self.segments[self.current],
-                &self.segments_ir[0],
-            );
-
-            // Backward FFT
-            if let Err(_err) = self.fft.inverse(&mut self.conv, &mut self.fft_buffer) {
-                output.fill(0.);
-                return; // error!
-            }
+            self.core
+                .process_block(&self.input_buffer, &mut self.conv, !input_buffer_was_empty);
 
             // Add overlap
             sum(
                 &mut output[processed..processed + processing],
-                &self.fft_buffer[input_buffer_pos..input_buffer_pos + processing],
+                &self.conv[input_buffer_pos..input_buffer_pos + processing],
                 &self.overlap[input_buffer_pos..input_buffer_pos + processing],
             );
 
@@ -304,14 +357,9 @@ impl Convolution for FFTConvolver {
                 self.input_buffer_fill = 0;
                 // Save the overlap
                 self.overlap
-                    .clone_from_slice(&self.fft_buffer[self.block_size..self.block_size * 2]);
+                    .clone_from_slice(&self.conv[self.block_size..self.block_size * 2]);
 
-                // Update the current segment
-                self.current = if self.current > 0 {
-                    self.current - 1
-                } else {
-                    self.active_seg_count - 1
-                };
+                self.core.update_current();
             }
             processed += processing;
         }
