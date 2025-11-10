@@ -8,6 +8,7 @@ As the original C++ implementation, this library implements:
 
 - Partitioned convolution algorithm (using uniform block sizes)
 - Optional support for non-uniform block sizes (`TwoStageFFTConvolver`)
+- An optimised version of the convolvers using Intel IPP (if the `ipp` feature is enabled)
 
 On top of that it implements:
 
@@ -16,9 +17,19 @@ On top of that it implements:
 
 Compared to the original C++ implementation, this implementation does _not_ provide:
 
-- Its own FFT implementation (it currently uses the rustfft crate)
+- Its own FFT implementation (it currently uses the rustfft crate by default or the IPP library if the `ipp` feature is enabled)
 - The option to use SSE instructions in the `FFTConvolver`
 
 ## Prerequisites:
 
 - rust >=1.72.0
+
+#### Optional dependencies:
+
+- Intel IPP (if the `ipp` feature is enabled)
+
+When building with the `ipp` feature, the `ipp-sys` crate is used to link against the IPP library. To build with the `ipp` feature (`cargo build --features ipp`), you need to have the IPP library installed and the `IPPROOT` environment variable set to the root directory of the IPP installation. On Linux this is achieved by running:
+
+- `source /opt/intel/oneapi/setvars.sh`
+
+If you want `ipp` to be statically linked, export `IPP_STATIC=1` before running `cargo build`.

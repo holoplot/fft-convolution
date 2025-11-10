@@ -8,3 +8,9 @@ edition = "2021"
 [dependencies]
 realfft = "3.3.0"
 rustfft = "6.1.0"
+ipp-sys = { git = "ssh://git@github.com/holoplot/ipp-sys.git", rev = "97e758c4b87b0b16800a76dd4e4603b61fc4eb09", features = ["2022"], optional = true  }
+num-complex = "0.4.6"
+
+[features]
+default = []
+ipp = ["ipp-sys"]
